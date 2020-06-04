@@ -1,21 +1,43 @@
 \section{Introduction}
 %-------------------------------------------------------------------------------
 
-\rewrite{Big, overarching statement about distributed databases (scalable, fault tolerant, available). Big overarching statement about single machine db's (good performance). Mention strict strict serializability. Mention workload skew, why workload skew matters \cite{fbphotocaching, fblinchpin}.}
+\rewrite{\textbf{Paragraph's purpose: it seems like first paragraphs often broadly introduce the problem domain?} Big, overarching statement about distributed databases (scalable, fault tolerant, available). Big overarching statement about single machine db's (good performance). Mention strict strict serializability. Mention workload skew, why workload skew matters \cite{fbphotocaching, fblinchpin}.}
 
-\rewrite{The problem we try to solve is sustaining throughput for skewed, non-partitionable workloads in distributed databases. Mention how most databases perform poorly from workload skew (I really wish I finished instrumenting so I could quantitatively identify the reasons), both in distributed settings and in single machine settings. Intuitively, it's due to bottlenecking on the hotkey, contention (mention 2PC, OCC, locks). Exacerbated by strong consistency model \cite{tapir}.}
+\rewrite{\textbf{Paragraph's purpose: introduce our problem.} The problem we solve is that users are forced to choose between \unseenabbrv{SMDBs} and distributed DBs. The former offers performance but not scalability, while the latter offers scalability but at the cost of latency and throughput that is orders of magnitude worse. 
+\begin{itemize}
+    \item Mention why SMDBs have very good performance: 
+    \begin{itemize}
+        \item all threads have full access to the entire database--even better if all data is in main memory
+        \item all accesses are local and need not incur network penalty
+        \item we know that the db is run on a single machine, so we can couple the hardware with the concurrency control protocol
+        \item honestly, just getting better hardware will probably help
+    \end{itemize}
+    I may need to move some of this to background, b/c I only want a sentence or two here.
+    \item Single machine databases don't scale. 
+    \item Distributed databases are designed and built with the requirement that users be able to arbitrarily add machines to the cluster. Is there a shorter way to say scalability?
+    \item They don't perform as well. Their latency is much higher, and throughput is much lower.
+    \begin{itemize}
+        \item Intra-database communication incurs cross-network communication penalty.
+        \item Layers of implementation are extremely decoupled, which makes operations slower. SMDBs sometimes couple the hardware with the CC protocol. This isn't possible here, so implementation is bulkier, and execution / operations are not as optimized as they could be.
+        \item they also require extra layers sometimes. For example, a fan-out layer (I think the analogy in SMDBs is a B+ tree index).
+        \item Contention is more probable due to high communication network costs, and for the same reason, the cost of contention is also much higher. It takes less txns to cause a bottleneck on a hotspot, simply bc the database can't process all of them on time.
+        \item Cost of consensus, even if the database isn't replicated, within a txn.
+        \item Uniform notion of time (this may fall under cost of consensus).
+    \end{itemize}
+    Again, you may need to shorten this to 1-2 sentences. You may want to move the details of this to the background section.
+\end{itemize}.}
 
-\rewrite{How people generally solve that problem. In distributed settings: partitioning \cite{partionskewpavlo, slog}, which doesn't work for non-partitionable workloads. Weakening the consistency model \cite{dynamo}, but now you're not consistent. Live with the low throughput \cite{calvin, spanner, cockroachdb}...but, well, now you have low throughput. 
+\rewrite{\textbf{Paragraph's purpose: introduce existing solutions.}  How people generally solve that problem. In distributed settings: partitioning \cite{partionskewpavlo, slog}, which doesn't work for non-partitionable workloads. Weakening the consistency model \cite{dynamo}, but now you're not consistent. Live with the low throughput \cite{calvin, spanner, cockroachdb}...but, well, now you have low throughput. 
 
 In single machine settings, things perform better \cite{mocc, cicada, ermia}, but now you're not distributed anymore, so goodbye to scalability (and fault tolerance).} \jenndebug{This is the perfect place to put the graph that Wyatt suggested, shows where Thermopylae falls amongst all the other options.}
 
-In this paper, we introduce Thermopylae, a distributed database that sustains throughput at three orders of magnitude higher than existing state of the art for non-partitionable, skewed workloads. It employs a novel distributed architecture that embeds a single machine DB into a distributed DB. This architecture dramatically increases throughput by exploiting workload skew to leverage single machine DB performance benefits. \rewrite{More rawr rawr we are awesome sentences.}
+\rewrite{\textbf{Paragraph's purpose: state our main contribution.}} In this paper, we introduce Thermopylae, a distributed database that sustains throughput at three orders of magnitude higher than existing state of the art and competitive \jenndebug{(better word?)} with single machine databases. It employs a novel distributed architecture that embeds a single machine DB into a distributed DB. This architecture dramatically increases throughput by exploiting workload skew to leverage single machine DB performance benefits.
 
-\rewrite{Here's a paragraph about embedding SMDBs into distributed DBs. I'm going to lift this from my thesis. Hello Silo \cite{silo}, hello CockroachDB \cite{cockroachdb}. State some applications, of which I have none.
+\rewrite{\textbf{Next few paragraphs' purpose: elaborate on contribution's main points.} Here's a paragraph about embedding SMDBs into distributed DBs. I'm going to lift this from my thesis. Hello Silo \cite{silo}, hello CockroachDB \cite{cockroachdb}. State some applications, of which I have none.
 
 Here's another paragraph about the protocol. Hello strict serializability, hello 2PC, hello MVCC, hello OCC. Probably throw in Rococo \cite{rococo} for good measure. State some benefits, of which I also have not yet thought of.}
 
-We present the following contributions in this paper:
+\rewrite{\textbf{Paragrph's purpose: contribution list.}} We present the following contributions in this paper:
 \begin{itemize}
     \item A novel distributed architecture that embeds a single machine DB into a distributed DB. The architecture exploits workload skew to leverage \unseenabbrv{SMDB} performance for increasing throughput \true{by several orders of magnitude}.
     \item An accompanying concurrency control and commit protocol that further improves throughput by \jenndebug{preventing bottlenecks (this is passive wording, need active wording)} on the \unseenabbrv{hotshard}. It also enforces the \true{strongest consistency model (is this actually still considered the strongest? I read somewhere that there was now a stronger one, but alas I forget the paper)}, strict serializability, by coordinating the executions of two independent databases.
