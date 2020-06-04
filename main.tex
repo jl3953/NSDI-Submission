@@ -60,25 +60,8 @@
 \usepackage{filecontents}
 
 %-------------------------------------------------------------------------------
-\begin{filecontents}{\jobname.bib}
-%-------------------------------------------------------------------------------
-@Book{arpachiDusseau18:osbook,
-  author =       {Arpaci-Dusseau, Remzi H. and Arpaci-Dusseau Andrea C.},
-  title =        {Operating Systems: Three Easy Pieces},
-  publisher =    {Arpaci-Dusseau Books, LLC},
-  year =         2015,
-  edition =      {1.00},
-  note =         {\url{http://pages.cs.wisc.edu/~remzi/OSTEP/}}
-}
-@InProceedings{waldspurger02,
-  author =       {Waldspurger, Carl A.},
-  title =        {Memory resource management in {VMware ESX} server},
-  booktitle =    {USENIX Symposium on Operating System Design and
-                  Implementation (OSDI)},
-  year =         2002,
-  pages =        {181--194},
-  note =         {\url{https://www.usenix.org/legacy/event/osdi02/tech/waldspurger/waldspurger.pdf}}}
-\end{filecontents}
+%\begin{filecontents} \include{\jobname.bib}
+%\end{filecontents}
 
 %-------------------------------------------------------------------------------
 \begin{document}
@@ -88,16 +71,12 @@
 \date{}
 
 % make title bold and 14 pt font (Latex default is non-bold, 16 pt)
-\title{\Large \bf Formatting Submissions for a USENIX Conference:\\
-  An (Incomplete) Example}
+\title{\Large \bf Submission}
 
 %for single author (just remove % characters)
 \author{
-{\rm Your N.\ Here}\\
-Your Institution
-\and
-{\rm Second Name}\\
-Second Institution
+{\rm Anon}\\
+DoubleBlind
 % copy the following lines to add more authors
 % \and
 % {\rm Name}\\
@@ -115,15 +94,8 @@ Not more than 200 words, if possible, and preferably closer to 150.
 
 
 %-------------------------------------------------------------------------------
-\section{Introduction}
-%-------------------------------------------------------------------------------
-
-A paragraph of text goes here. Lots of text. Plenty of interesting
-text. Text text text text text text text text text text text text text
-text text text text text text text text text text text text text text
-text text text text text text text text text text text text text text
-text text text text text text text.
-More fascinating text. Features galore, plethora of promises.
+\input{intro}
+\input{background}
 
 %-------------------------------------------------------------------------------
 \section{Footnotes, Verbatim, and Citations}
@@ -144,9 +116,9 @@ int main(int argc, char *argv[])
 
 Now we're going to cite somebody. Watch for the cite tag. Here it
 comes. Arpachi-Dusseau and Arpachi-Dusseau co-authored an excellent OS
-book, which is also really funny~\cite{arpachiDusseau18:osbook}, and
+book, which is also really funny~\cite{fblinchpin}, and
 Waldspurger got into the SIGOPS hall-of-fame due to his seminal paper
-about resource management in the ESX hypervisor~\cite{waldspurger02}.
+about resource management in the ESX hypervisor~\cite{fbphotocaching}.
 
 The tilde character (\~{}) in the tex source means a non-breaking
 space. This way, your reference will always be attached to the word
@@ -156,7 +128,7 @@ And the 'cite' package sorts your citations by their numerical order
 of the corresponding references at the end of the paper, ridding you
 from the need to notice that, e.g, ``Waldspurger'' appears after
 ``Arpachi-Dusseau'' when sorting references
-alphabetically~\cite{waldspurger02,arpachiDusseau18:osbook}. 
+alphabetically~\cite{fblinchpin, fbphotocaching}. 
 
 It'd be nice and thoughtful of you to include a suitable link in each
 and every bibtex entry that you use in your submission, to allow
@@ -253,7 +225,7 @@ section.
 
 %-------------------------------------------------------------------------------
 \bibliographystyle{plain}
-\bibliography{\jobname}
+\bibliography{jobname.bib}
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \end{document}
