@@ -1,9 +1,40 @@
 \section{Introduction}
 %-------------------------------------------------------------------------------
 
-\rewrite{\textbf{Paragraph's purpose: it seems like first paragraphs often broadly introduce the problem domain?} Big, overarching statement about distributed databases (scalable, fault tolerant, available). Big overarching statement about single machine db's (good performance). Mention strict strict serializability. Mention workload skew, why workload skew matters \cite{fbphotocaching, fblinchpin}.}
+\rewrite{\textbf{<Paragraph's purpose: it seems like first paragraphs broadly introduce the problem domain?} But reading now, I think we might be able to jump straight into the problem statement.}
 
-\rewrite{\textbf{Paragraph's purpose: introduce our problem.} The problem we solve is that users are forced to choose between \unseenabbrv{SMDBs} and distributed DBs. The former offers performance but not scalability, while the latter offers scalability but at the cost of latency and throughput that is orders of magnitude worse. 
+\rewrite{\textbf{<Paragraph's purpose: introduce our problem.>}} We address the problem of users being forced to choose between performant single machine databases (which do not scale) and scalable distributed databases (whose throughput is orders of magnitude worse). Distributed databases pay a performance penalty for scalability in the form of cross-network communication, decoupled layers of implementation, enforcement of some notion of time across nodes, and higher latencies and abort rates due to contention. However, scalability is desirable, because it allows users to arbitrarily increase their databases' capacities simply by adding nodes to their clusters. In addition, database throughput should also scale linearly with cluster size. We explain later \jenndebug{(aka the Background)} why systems often have trouble achieving this ideal.
+
+\rewrite{\textbf{<Next paragraphs' purpose: introduce existing solutions.>}} Existing distributed systems address the performance issue with a variety of techniques \jenndebug{(Lame sentence. Needs revision)}. A popular strategy is to intelligently partition data such that a majority of distributed transactions access only one node in practice\cite{partionskewpavlo, slog}. Partitioning works very well when workloads are easily partitionable, and access skews matches machines' capacities. \jenndebug{(Check the Pavlo citation.)} Another strategy to improve performance is to weaken the consistency model. Amazon Dynamo \cite{dynamo} famously achieves high throughput and low latency by sacrificing strong consistency (it implements eventual consistency, not strict serializability). Otherwise, systems just live with it \cite{aurora, calvin, spanner, cockroachdb}. \jenndebug{(Two things: 1) check Aurora's reference. 2) That last sentence needs rephrasing.)}
+
+Single machine databases are more performant \cite{mocc, cicada, ermia}. Their accesses are all local and do not incur network penalty. In addition, database architects are allowed to leverage certain performance optimizations, knowing that the entire database executes on a single machine. For example, the concurrency control protocol may be tightly coupled with the hardware \cite{silo} \jenndebug{(yes, silo, but know there's another one out there with native locks)}, all workers may access the entire database at a constant cost \jenndebug{(shared memory, main memory)}, and lightweight indexes can be used to access any record as compared to the multiple layers of indirection \jenndebug{(talking about the fan out layer + storage layer communication here, I hope this is actually correct)} that distributed transactions travel through. As performant as they are however, single machine databases are limited in the amount of data they can possible store--namely, the number of hard drives we can physically attach to a single machine. \jenndebug{This is the perfect place to put the graph that Wyatt suggested, shows where Thermopylae falls amongst all the other options.} 
+
+\rewrite{\textbf{<Paragraph's purpose: state our main contribution.>}} We introduce Thermpopyale, a distributed database that offers the best of both worlds by combining both distributed and single node DB’s in a novel architecture. Thermopylae sustains throughput at three orders of magnitude higher than existing state of the art and competitive \jenndebug{(better word?)} with single machine databases. It embeds a single machine DB into a distributed DB and dramatically increases its throughput by exploiting workload skew to leverage single machine DB performance benefits.
+
+\rewrite{\textbf{<Next few paragraphs' purpose: elaborate on contribution's main points.>}} Thermopylae introduces a novel distributed architecture that embeds a single machine DB into a distributed DB. Our novel architecture exploits the skew inherent to a real-world workload and centralizes all “hotkeys" (the most accessed keys in a skewed workload) on a single machine. Although conventional load balancing
+strategies attempt to maximize throughput by distributing hot keys across nodes \cite{partionskewpavlo, slog, cockroachdb}, our design runs counter to that
+intuition. Instead, we co-locate keys and create a central point to which targeted, aggressive optimizations can now be applied. This centralization enables the “hotshard” (node on which hot keys are congregated) to now leverage the same performance optimizations that single machine databases employ to boost their performance. We integrate an off-the-shelf single node DB into an existing distributed database and run it exclusively on the hotshard, thereby applying this the most performant component to the workload’s most difficult bottlenecks. \true{Our evaluation shows that we achieve throughput on the same order of magnitude as single machine databases--several orders larger than the original distributed database’s.}
+
+We implement a novel distributed transaction commit protocol, \textbf{3PL}. The protocol 1) is aware of the hotshard executing as an independent database, 2) optimizes for its increased workload, and 3) enforces strict serializability, \true{the strongest consistency model}. The hotshard's increase in load results in high levels of contention, which dramatically decreases the system's throughput due to longer wait times and queues, and more retries and aborts. 3PL addresses this by deferring lock acquisition on hot keys until after it has successfully locked all non-hot keys \cite{quro}, thereby preemptively unburdening the hotshard. 
+
+A subtle insight in our protocol is that transactions may contact the hotshard only once in their lifetime, and upon contact, they must successfully commit. This \textbf{single-touch rule} preserves strict serializability in the face of two independently executing databases. The hotshard’s independent single-node DB cannot distinguish between a batch of requests from the same distributed transaction and multiple requests each from a different distributed transaction. This results in a violation of strict serializability. A naive solution might lock the hot shard over the transaction’s lifetime, but this would exacerbate contention, so we choose to have the protocol enforce the single-touch rule instead.
+
+\rewrite{\textbf{<Paragraph's purpose: contribution list.>}} We present the following contributions in this paper:
+\begin{itemize}
+    \item A novel distributed architecture that increases throughput \true{by several orders of magnitude}.
+    \item An accompanying concurrency control protocol that enforces strict serializability by coordinating two independent databases.
+    \item \true {Thermopylae, a distributed database capable of sustaining throughput around three orders of magnitude higher than existing state of the art.}
+    \item \true{A popularity detection algorithm that automates moving keys onto and off of the hotshard.}
+\end{itemize}
+
+\rewrite{\textbf{<Paragraph's purpose: lay out the paper's organization.>} The rest is still unwritten! Staring at the blank page before me...}
+\newline
+\newline
+\newline
+\newline
+\newline
+
+\rewrite{\textbf{<This content used to be in the Intro, but I think it fits better in the Background.>}
 \begin{itemize}
     \item Mention why SMDBs have very good performance: 
     \begin{itemize}
@@ -24,24 +55,4 @@
         \item Cost of consensus, even if the database isn't replicated, within a txn.
         \item Uniform notion of time (this may fall under cost of consensus).
     \end{itemize}
-    Again, you may need to shorten this to 1-2 sentences. You may want to move the details of this to the background section.
-\end{itemize}.}
-
-\rewrite{\textbf{Paragraph's purpose: introduce existing solutions.}  How people generally solve that problem. In distributed settings: partitioning \cite{partionskewpavlo, slog}, which doesn't work for non-partitionable workloads. Weakening the consistency model \cite{dynamo}, but now you're not consistent. Live with the low throughput \cite{calvin, spanner, cockroachdb}...but, well, now you have low throughput. 
-
-In single machine settings, things perform better \cite{mocc, cicada, ermia}, but now you're not distributed anymore, so goodbye to scalability (and fault tolerance).} \jenndebug{This is the perfect place to put the graph that Wyatt suggested, shows where Thermopylae falls amongst all the other options.}
-
-\rewrite{\textbf{Paragraph's purpose: state our main contribution.}} In this paper, we introduce Thermopylae, a distributed database that sustains throughput at three orders of magnitude higher than existing state of the art and competitive \jenndebug{(better word?)} with single machine databases. It employs a novel distributed architecture that embeds a single machine DB into a distributed DB. This architecture dramatically increases throughput by exploiting workload skew to leverage single machine DB performance benefits.
-
-\rewrite{\textbf{Next few paragraphs' purpose: elaborate on contribution's main points.} Here's a paragraph about embedding SMDBs into distributed DBs. I'm going to lift this from my thesis. Hello Silo \cite{silo}, hello CockroachDB \cite{cockroachdb}. State some applications, of which I have none.
-
-Here's another paragraph about the protocol. Hello strict serializability, hello 2PC, hello MVCC, hello OCC. Probably throw in Rococo \cite{rococo} for good measure. State some benefits, of which I also have not yet thought of.}
-
-\rewrite{\textbf{Paragrph's purpose: contribution list.}} We present the following contributions in this paper:
-\begin{itemize}
-    \item A novel distributed architecture that embeds a single machine DB into a distributed DB. The architecture exploits workload skew to leverage \unseenabbrv{SMDB} performance for increasing throughput \true{by several orders of magnitude}.
-    \item An accompanying concurrency control and commit protocol that further improves throughput by \jenndebug{preventing bottlenecks (this is passive wording, need active wording)} on the \unseenabbrv{hotshard}. It also enforces the \true{strongest consistency model (is this actually still considered the strongest? I read somewhere that there was now a stronger one, but alas I forget the paper)}, strict serializability, by coordinating the executions of two independent databases.
-    \item \true {Thermopylae, a distributed database capable of sustaining throughput on the same order of magnitude as its SMDB counterparts--around three orders of magnitude higher than existing state of the art distributed databases.}
-\end{itemize}
-
-\rewrite{Sections 2 and n and n+1 are organized as follows. Many sections. All the sections.}
+\end{itemize}}
