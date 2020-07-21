@@ -10,6 +10,12 @@
     \item \textbf{Relevance to us}: we may use it in place of Silo. 
     \item \textbf{Does well}: It uses a LOT of optimizations: best-effort inlining to save memory (version attempts to use pre-allocated space), installing writes uses atomic compare and swap, "contention aware validation" uses latest wts to determine contention and orders writes, some special garbage collection based on timestamps). It also performs comparatively well in write-intensive, contentions (zipf const = 0.99) workloads. Does better than Silo, TicToc, Hekaton, Ermia, Foedus.
     \item\textbf{Can improve}: Besides the write-intensive skewed workload, throughput improvements are not significant. The lines are barely apart. I also remember noting to myself the first time that when I describe a protocol, I would not write it like that.  
+    \item\textbf{Capacity}: 4 warehouses + 28 threads seem to be their focal numbers, though they went up to 28 warehouses for 28 threads.
+    \item \textbf{Throughput}:\begin{itemize}
+        \item TPC-C=2.5M tps (full mix, warehouse count = thread count, best number)
+        \item YCSB=1.1M tps (50\% RMW "write intensive", 28 threads)
+        \item YCSB=5.5M tps (95\% RMW "read intensive", 28 threads?)
+    \end{itemize}
 \end{itemize}
 \subsubsection{Hekaton}
 \textbf{Main point}: Hekaton\cite{hekaton} is Microsoft's OLTP engine for its DBMS, SQL Server. It uses MVCC, is latch free, and it seems to be famous, b/c it looks like it is one of the first main memory DBs in production.
@@ -17,19 +23,110 @@
     \item \textbf{Relevance to us}: Unsure. I read it because it is mentioned as a baseline in a lot of the SMDB papers as a conventional default. Might help to mention that we read it?
     \item \textbf{Did well}: being one of the first production SMDBs?
     \item \textbf{Can improve}: its performance seems pretty poor compared to say, Silo (published at the same time).
+    \item\textbf{Capacity}: 28 warehouses for 28 threads, taken from Cicada.
+    \item \textbf{Throughput}:taken from Cicada
+    \begin{itemize}
+        \item TPC-C=1.5M tps (full mix, warehouse count = thread count, best number)
+        \item YCSB=1.8M tps (50\% RMW "write intensive", 28 threads, skew=0.6)
+        \item YCSB=2.5M tps (95\% RMW "read intensive", 28 threads, skew=0.8)
+    \end{itemize}
 \end{itemize}
 
-\subsubsection{MOCC\cite{mocc}}
+\subsubsection{MOCC}
+\textbf{Main point}: MOCC \cite{mocc} is OCC, but acts like 2PL and takes read locks in the beginning of transactions if the records being accessed are hot enough. Prevents clobbered reads, esp long-lived read-only txns. Temperature statistics are based on the number of requests that try to access a record. They prevent deadlock by locking in a certain order, and to make this work wit the optional locking (according to temperature), they allow locks to be acquired, released, and acquired again (if necessary).
+\begin{itemize}
+    \item \textbf{Relevance to us}: Frequently cited SMDB, figured I'd give it a read.
+    \item \textbf{Did well}: Not well versed enough in SMDBs to really say what it did well in that context. From my perspective, the 2PL + OCC idea seems like a narrower version of Haonan's contention aware concurrency control protocol project, but on SMDBs instead of DSDBs.
+    \item \textbf{Can improve}: Again, not well versed enough in SMDBs to say with certainty. If I were to nitpick: locking in a deterministic order doesn't need an entire section on its own, b/c I don't think it warrants ?
+    \item\textbf{Capacity}: 28 warehouses for 28 threads, taken from Cicada.
+    \item \textbf{Throughput}:taken from Cicada
+    \begin{itemize}
+        \item TPC-C=1.5M tps (full mix, warehouse count = thread count, best number)
+        \item YCSB=1.8M tps (50\% RMW "write intensive", 28 threads, skew=0.6)
+        \item YCSB=2.5M tps (95\% RMW "read intensive", 28 threads, skew=0.8)
+    \end{itemize}
+\end{itemize}
 
-\subsubsection{Ermia\cite{ermia}}
-\subsubsection{Silo\cite{silo}}
+\subsubsection{Ermia}
+\textbf{Main point}: Ermia \cite{ermia} is a SMDB that, as far as I can tell, is a hodgepodge of Masstree indexing into indirection arrays + some special centralized log manager that avoids being the bottleneck amongst the cores. It is NOT SERIALIZABLE. To be frank, I think I read this too long ago to remember what I was trying to remind myself of.
+\begin{itemize}
+    \item The paper mentions that storage managers are tightly coupled to the concurrency control (CC) scheme. I assume that's one of the problems they addressed.
+    \item Indirection array: you could change / insert / delete objects just by using pointers.
+    \item The paper also mentions that long reads are not optimal for OCC, b/c they keep getting aborted at validation. I guess read lock requests always lose to exclusive lock requests in OCC? I assume that's another problem they address. I have this written down more than once in my handwritten notes, so I assume this is one of the main problems they address.
+\end{itemize}
+
+\subsubsection{Silo}
+\textbf{Main point}: Silo \cite{silo} is a SMDB that uses an epoch-based commit protocol. (Oh boy, I should've written this down when I still remembered what the protocol was...)
+\begin{itemize}
+    \item Silo uses unique transaction ID's (TIDs) to distinguish both transactions AND records. 
+    \item Their txn protocol uses memory fences to advance txns. Memory fences advance both between two transactions and within a single transaction. That's also how they guarantee strict serializability. Transactions that end in a prior epoch cannot be ordered after txns that start in a later epoch, delimited by the memory fences.
+    \item The paper maps their protocol onto S2PL.
+    \item Here it is, per txn (note: phases are ACROSS epochs):
+    \begin{itemize}
+        \item Phase 1: Acquire writes in the lock set in deterministic order. Snapshot global epoch, which is a globally readable number that gets incremented with its own dedicated thread.
+        \item Phase 2: Check all read set records, see if their TID's have changed. Note that TID's determine both transaction and record uniqueness at a given point in time. If changed, txn releases all locks and aborts. If not, use the globally snapshotted TID to reassign the records' TID's.
+        \item Phase 3: Write modified records and set their lock bits to true. Then, atomically update all write set records' TIDs to be the globally snapshot one.
+    \end{itemize}
+\end{itemize}
 \subsubsection{Foedus}
 \cite{foedus}
 
 \subsection{Distributed Databases}
-\subsubsection{SLOG\cite{slog}}
+\subsubsection{SLOG}
+\textbf{Main point}: SLOG \cite{slog} is a distributed database that handles partitionable workloads very well. It shards data across mutliple "regions" and has the regions run their own deterministic algorithm for processing / ordering txns. "Single home" = single shard. "Multi-home" = multiple shards. They use a single region to coordinate all multi-home txns.
+\begin{itemize}
+    \item If all data in a txn is "mastered" in a single region, it is "single homed." Otherwise, it is "multi-homed."
+    \item SLOG dynamically remasters data to accommodate changing data access patterns.
+    \item We assume we know what data the txn will access.
+    \item Regional "global" log is the source of truth. It has writes (txns) interleaved from local and foreign regions.
+    \item Servers individually read the global log and lock if the need to.
+    \item "Lock-only" txns = part of a bigger overall txn that gets executed at a particular shard.
+    \item All multi-homed txns are sent over to a designated region to be sequenced into the global log.
+\end{itemize}
 \subsubsection{Tapir\cite{tapir}}
 \subsubsection{Aurora}
-\cite{aurora}
+\textbf{Main point}: Aurora \cite{aurora} is an AWS is a database whose instances run on single nodes, but their data is replicated across different nodes. They emphasize the separation between the database layer and the storage layer. 
+\begin{itemize}
+    \item Instead of implementing a traditional 2/3 quorum, Aurora implements a 4/6 quorum to implement Availability Zone (AZ) + 1 failure resilience. 
+    \begin{itemize}
+        \item Aurora assumes 3 AZ's, which are independent of each others' failures but are connected by low latency links. 
+        \item The authors found that 2/3 quorum only allowed one AZ to fail before the database could not longer achieve quorum.
+        \item They found that resilience to one AZ failure was not a strong enough guarantee, b/c it was common for one availability zone to fail while machines in other AZ's experienced non-AZ related disk/machine failures.
+        \item They increased the quorum to 4/6, two replicas per AZ, to allow an AZ to fail + one more random machine failure.
+        \item Reads require 3/6 (AZ + 1) quorum. I guess concurrent reads to two quorum halves is okay, since it's the writes that are more importantly sequenced. Writes required 4/6 quorum. either an AZ fails or two AZ's have random machines failing.
+    \end{itemize}
+    \item Aurora minimizes the network latency by sending only a re-do log over the network instead of the log + the data + metadata + a bunch of other stuff.
+    \begin{itemize}
+        \item Most of this information (except for the metadata) can be derived from the redo log.
+        \item The redo log is a diff.
+        \item The log applicator (reads the redo log to generate the actual data values) is pushed to the storage layer, not the database layer.
+        \item From the redo log, all remaining information is derived.
+    \end{itemize}
+    \item I think Aurora is actually a SMDB (each DB instance runs on a single machine), but its storage system (and replication scheme) is distributed across multiple nodes.
+    \item \textbf{Did well}: I think the ideas are pretty cool.
+    \item \textbf{Can improve}: I feel that the writing is very poor. Sometimes, I think the writing quality obscures what the authors are trying to convey.
+\end{itemize}
+
+\subsubsection{Chiller}
+\textbf{Main point}: Chiller \cite{chiller} is an "partitioning scheme + execution model" that increases throughput by reducing contention. It assumes that networks are low latency (aka RDMA). My detailed write-up is here: \cite{jennchiller}.
+
+\subsubsection{Squall}
+\textbf{Main point}: Squall \cite{squall} solves live migration of tuples. Transactions can continue executing as migration occurs. Tuples individually enter or leave a partition (considered fine-grained migration, as opposed to an entire partition moving onto / off of nodes). Migration protocol:
+\begin{enumerate}
+    \item Initialization. External controller triggers a reconfig-init txn that attempts to lock every single partition in the cluster, just as you would lock in a normal txn. If the reconfig-init txn fails, then it re-queues like a normal txn. 
+    \item Migration. The coordinator (one of the affected partitions) interleaves migration txns with normally executing txns. If a txn tries to execute at a partition that no longer has the tuples it needs, the txn is re-scheduled at the destination partition of those tuples. The txn then waits for those tuples to arrive.
+    \item Termination. When all partitions have received / sent their tuples, reconfig ends.
+\end{enumerate}
+\begin{itemize}
+    \item \textbf{Can improve}: Squall sacrifices txn latency to advance migration progress (the polling of tuples only after a txn has arrived at a destination partition), and it is aware of this.
+    \item The eval tests how latency and TP are decreased on TPC-C and YCSB compared to other migration schemes.
+\end{itemize}
+
 \subsubsection{Replicated Commit}
 \cite{replicatedcommit}
+\subsection{COPS}
+\cite{cops}
+\subsection{Eiger}
+\cite{eiger}
+\subsection{Rococo}
+\cite{rococo}
