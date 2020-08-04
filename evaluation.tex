@@ -1,26 +1,19 @@
 \section{Evaluation}
 \label{sec:eval}
 
-\newcommand{\mw}[1]{\note{green}{MW: #1}}
-
-\iffalse
-\name{} is designed to provide minimal commit latency for scalable,
-geo-replicated databases under all levels of contention.
-% MW: shouldn't the above have been stated already?
-To understand
-the advancement of \name{} we evaluate our implementation to answer
-the following questions:
-\fi
 Our experimental evaluation answers:
 \begin{itemize}
-\item How does throughput compare to state of the art for an average workload and for varying levels of skew?
-\item How well does throughput scale as the number of servers increase? How does this scalability hold for varying levels of skew? How does this compare to state of the art?
-\item How well does \name perform compared to a single machine database? (NOT INCLUDED. \jenndebug{Frankly, this result is meaningless. After all, why compare a distributed database to a single node one? However, if we happen to have these results for whatever reason (idle curiosity?), possibly include them?})
+\item How does \name{}'s throughput and latency compare to existing state of the art DSDBs for the full TPCC workload? For low to high skewed workloads? 
+\item How well does throughput scale (linearly? sub-linearly?) with the number of servers increase for a uniform workload? How does this relationship vary or hold for low and high levels of skew? How does \name{}'s scalability for uniform and skewed workloads compare to the uniform and skewed scalabilities of existing SOTA DSDBs?
+\item Does \name{} achieve the performance of a single machine database? 
 \end{itemize}
 
-Goal: Our baseline is unmodified CRDB. We implement \name{} on our baseline (CRDB).
+Our goal is to implement a distributed database, \name{}, that achieves the superior performance of SMDBs without trading off the scalability of DSDBs. We implement \name{} by integrating \smdb{} \cite{cicada} into \dsdb{}\cite{cockroachdb}, an open source Spanner \cite{spanner} clone. Figure~\ref{fig:eval_summary} summarizes our main results.\\
+\changes{* If/when we implement hot key migration, we should evaluate that throughput against CRDB.\\
+* If/when we implement SMDB failover, we should evaluate that throughput against CRDB as well.\\
+* At how much data do we start needing extra nodes? And at that break point, how does \name{}'s thoughput / latency compare with Cicada's? How about \dsdb{}'s?}
 
-Figure~\ref{fig:eval_summary} summarizes our main results.
+
 \begin{figure}	
 \begin{tabular}{@{}p{.88\columnwidth} r@{}}
 \midrule
@@ -35,43 +28,116 @@ Figure~\ref{fig:eval_summary} summarizes our main results.
 \label{fig:eval_summary}
 \end{figure}
 
-\subsection{Implementation}
-* \name{} is implemented in \jenndebug{???} lines of Golang and \jenndebug{???} lines of C++.\\
-* We implement the integration of \smdb{} into \dsdb{}.\\
-* The implementation of \name{} will be publicly
-  available on Github when the paper is published.
+\subsection{Experimental Setup}
+
+* \textbf{Testbed}. We run all experiments on CloudLab \cite{cloudlab} using m510 machines. Each node runs an 8 core Intel Xeon D-1548 at 2.0 Ghz, 64 GB RAM.\\
+* \textbf{Experimental parameters}. We use closed loop clients per server = varied to control load. The number of keys we put on the hotshard will vary per skew and depend on the hotshard's capacity (which is \jenndebug{???}).\\
 
 \subsection{Baselines and Workloads}
 
 \subsubsection{Baselines}
-This is just \dsdb{} v20.1
+\textbf{\dsdb{}}. We use the latest stable branch of \dsdb{} (v20.1) as our baseline DSDB comparison. \dsdb{} is an open-source production database widely adopted by industry \jenndebug{[cite some users]}, and its performance is what many database users would reasonably expect from an industry SOTA DSDB.
 
-\subsubsection{Workloads.}\\
-\textbf{Microbenchmark:}\\
-* \dsdb{}'s KV Benchmark. We modified it to have transactions.\\
-* Each transaction draws 10 keys from a zipfian distribution. We do not
-prevent duplicates (\dsdb{}'s protocol prevents duplicates for us).\\
-* Not sure how many rows we should pre-populate with, but I feel that the warm-up period (which is longer than the actual test period) takes care of this for us.\\
-* All data is in memory.\\
-* Zipfian constant can be varied (and so can the number of keys per txn, but I chose 10 to follow TPC-C).\\
-* 95\% reads, 5\% writes ("read-heavy"), matches CRDB's eval.\\
-* CRDB's original implementation of this actually follows YCSB pretty closely. The difference is that there's only two types of operations instead of four.\\
-* We choose our modified version over YCSB, b/c YCSB does not support txns. Given that \name{} guarantees strict serializability, a workload that does not support transactions makes a weak eval.\\
-* Tests CRDB's throughput with a quantifiable skew.\\
-\\
+\textbf{\smdb{}}. We compare \name{}'s performance against \smdb{}'s to quantitatively illustrate how well \name{} achieves the throughput and latency standards of SMDBs. \smdb{} is a relatively recent SMDB with promising evaluation numbers.
+
+\subsubsection{Microbenchmarks}
+
+\textbf{TPC-C:}\\
+\begin{itemize}
+    \item Standard, accepted benchmark for OLTP workloads.
+    \item For our trials, we use 1) the full mix, 2) just NewOrder + Payment, and 3) 100\% NewOrder. When we further mention "TPC-C" for the remainder of the section, we mean we obtain separate results for all three combinations.
+    \item \jenndebug{(Jennifer's meta comment: the original comments / discussion wondered at what point does it start making sense to use Cicada + more machines? I do make a note of how the amount of data could affect fairness in the individual experiments, but I chose instead to directly address this question in the "Scalability" section. The jist of the question seemed to align more with that section's theme?)}.
+\end{itemize}
+
+\textbf{\dsdb{}'s Custom KV Benchmark, modified:}
+\begin{itemize}
+    \item \dsdb{}'s custom KV benchmark sends read-only and write-only requests that each contain a configurable number of keys. The exact mix of read- vs write-requests is also configurable. We modify the benchmark to run statements as part of individual transactions (although in hindsight, this probably did not matter, since we only have a single SELECT or UPSERT statement per txn) and to draw keys from a pre-generated zipfian distribution.
+    \item We adopt \dsdb{}'s experimental setup and choose 95\% reads. Each transaction draws 10 distinct keys from a zipfian distribution. If we draw duplicates, we continue to draw until all keys are distinct.
+    \item We run a 120s warm-up / pre-population period, followed by a 60s trial. We discard results from the warm-up period. We run each warm-up + trial three times and report the median across all runs.
+    \item \dsdb{}'s KV benchmark is actually very similar to YCSB. It differs in that 1) KV only supports SELECT and UPSERT instead of the full four operations, and 2) KV's requests are transactional rather than single-key operations. For the second difference, We chose to run our modified KV over YCSB, since a transactional workload makes a stronger eval for a strictly serializable DSDB. 
+\end{itemize}
+
+\subsubsection{Realistic Workloads}
 \textit{* Other options for skewed workloads include:}\\
 ** Calvin's modified TPC-C (they designate a portion of the keys per server as "hot," and the fraction that they dedicate fine tunes contention).\\
 ** Chiller modifies TPC-C to model InstaCart's workload, which is presumably free.\\
 ** Facebook SVE paper uses FB's access patterns. Not sure if this public.\\
 
-\textbf{TPC-C:}\\
-* Standard, accepted benchmark for OLTP workloads\\
-* \textbf{Calvin uses 100\% New Order txns, which is read-write.} \jenndebug{However, our microbenchmark uses read-heavy workload to match CRDB's. We may want to more closely match the read-heaviness in our TPC-C workload mix.}\\
-* Number of warehouses will match the number of machines.\\
+\subsection{Microbenchmarks}
 
-\subsection{Configuration and Calibration}
+\subsubsection{TPC-C}
+\label{sec:tpcc}
 
-\paragraph{Testbed}.\\
+\textbf{Question addressed}:
+\begin{enumerate}
+    \item How does \name{}'s throughput compare to \dsdb{}'s on TPC-C benchmark?
+    \item Does \name{}'s throughput achieve the throughput of an SMDB on TPC-C? How does \name{}'s throughput compare to \smdb{}'s on TPC-C?
+\end{enumerate}
+\textbf{Desired graph}: Throughput (op/sec) vs. number of warehouses.
+\begin{itemize}
+    \item Regarding number of warehouses, adopt \dsdb{}'s published experimental setup \cite{cockroachdb_experimental}. Run \name{} on full TPC-C mix on 1K, 10K, 50K, 100K warehouses. Also adopting network setup from \dsdb{}'s best practices \cite{cockroachdb_best}, connect machines in a star topology.
+    \item Regarding number of nodes, deviate from \dsdb{} experimental setup (which uses 81 servers) and start with 8 servers (1 hotshard + 7 warm shards).
+    \item Run \dsdb{} on the same setup (8 warm nodes) and per number of warehouses, compare TPC-C throughput to \name{}'s.
+    \item Run \smdb{} on its own implemented version of TPC-C and compare throughput numbers to \name{}'s, so we can make the claim that \name{} offers throughput on the same level as an SMDB.
+    \jenndebug{(Jennifer's meta question: how much data do we put on \smdb{} for this trial? One machine will obviously not fit 8 machine's worth, but running \smdb{} on the KV benchmark with less data is not an apples-to-apples comparison?)}
+\end{itemize}
+
+\subsubsection{\dsdb{}'s Custom KV Benchmark}
+\label{sec:kv}
+\textbf{Question addressed}:
+\begin{enumerate}
+    \item How does \name{}'s throughput compare to \dsdb{}'s under varying levels of skew?
+    \item Does \name{}'s throughput reach the the same order of magnitude as an SMDB? How does \name{}'s throughput compare to \smdb{}'s under varying levels of skew?
+\end{enumerate}
+\textbf{Desired graph}: Throughput vs. skew, for a fixed number of machines.
+\begin{itemize}
+    \item Fix a number of nodes (for now, let's say 8 = 1 hotshard + 7 warm shards) and run \name{} on \dsdb{}'s Custom KV microbenchmark. Vary skew s=[0.5, 1.5].
+    \item Fix eight nodes and run \dsdb{} on the same KV benchmark with the same skew domain s=[0.5, 1.5].
+    \item Implement the same benchmark on \smdb{} and run it with the same skew domain s=[0.5, 1.5].
+     \jenndebug{(Jennifer's meta question: repeat concern about how much data we put on \smdb{} to make an apples-to-apples comparison.)}
+\end{itemize}
+
+\subsection{Scalability}
+\label{sec:scale}
+
+* \textit{We use the number of non-hotshard machines as a rough proxy for the amount of data we can store in our DSDB.}\\
+
+\textbf{Questions addressed}:
+\begin{enumerate}
+    \item How does \name{}'s throughput scale with the number of non-hotshard machines?\\
+    * Linearly? Sub-linearly? Maybe linearly for the first, say, 10 machines, and sub-linearly for the next 10? And adding machines past that number has no effect on throughput?
+    \item At each number of machines, how does \name{}'s throughput compare with our baseline \dsdb{} with the same number of nodes?
+\end{enumerate}
+\textbf{Desired graph}: Throughput (op/sec) vs. number of machines \textit{(number of machines can be replaced with GB of data, which is what number of machines approximates)}.
+\begin{itemize}
+    \item Fix a skew (s=1.2), and run KV benchmark on \name{} for an increasing number of machines until throughput plateaus. 
+    \item Do the same for \dsdb{} and compare the two lines on the same plot.
+\end{itemize}
+
+\textbf{Questions addressed}: 
+\begin{enumerate}
+    \item How does \name{}'s throughput scalability vary with skew? 
+    \item How does this compare to \dsdb{}'s throughput scalability at those same zipfian constants?
+\end{enumerate}
+\textbf{Desired graph}: throughput vs. number of machines \textit{(can be replaced with GB of data)}.
+\begin{itemize}
+    \item For three separate skews representing low, medium, high skews (s=0.5, 0.99, 1.2a), graph \name{}'s throughput on KV benchmark, varying the number of machines until throughput plateaus.
+    \item For the same three separate zipfian constants, graph \dsdb{}'s throughput vs. number of machines. Since \dsdb{}'s curve is meant to be our baseline comparison, the domain for its graph should match \name{}'s. 
+\end{itemize}
+
+\textbf{Questions addressed}:
+\begin{enumerate}
+    \item How much data can \smdb{} (and subsequently, the \name{}'s hotshard) hold? How does \name{}'s throughput compare to \smdb{}'s at that threshold amount of data?
+    \item How well does \name{} maintain (or not) that throughput once it adds a non-hotshard machine to its cluster? How does skew affect that relationship?
+\end{enumerate}
+\textbf{Desired graph}: throughput vs. GB of data.
+\begin{itemize}
+    \item Run KV benchmark on \smdb{} at skew s=0 and s=1.2 for increasing GBs of data until \smdb{} cannot hold anymore data.
+    \item Run KV benchmark on \name{} at the same skews for increasing GBs of data. When we reach the \smdb{}'s break point, add another machine and keep going for few more GB's.
+\end{itemize}
+
+---\jenndebug{END OF THE EVAL / IMPLEMENTATION SECS} ---
+
 What \dsdb{} uses:\\
 * Amazon EC2\\
 * Node type: c5d.9xlarge\\
@@ -82,148 +148,3 @@ What we are likely to use:\\
 Whatever I can reserve a lot of on CloudLab. So far, the Utah cluster looks like:\\
 * Node type: m510 machines\\
 * Node specs: CPU 8 core Intel Xeon D-1548 at 2.0 GHz, 64 GB RAM, 256 GB SSD\\
-
-
-\paragraph{Experimental Parameters}.\\
-* Client key sampling = zipfian for microbenchmark | tpcc will follow Calvin's eval, since \dsdb{} doesn't publish their specs.\\
-* Closed loop clients per server = varied to control load\\
-* The number of keys we put on the hotshard will vary per skew and depend on the hotshard's capacity (which is \jenndebug{???}).
-
-\paragraph{Measurement details}.\\
-* Each experiment lasts 180 seconds, with the first 120 seconds excluded from results to avoid start up.\\
-* Each experiment is run 3 times. The median across all trials is
-reported with a box and whiskers plot to indicate variance (though with three points, the plot is just...whiskers?)\\
-* So far, throughput is measured on the client's side, not the server side. We may want to add server side logging (\jenndebug{???}).
-
-\paragraph{Calibration and validation}.\\
-* Put in a CRDB node in a CRDB distributed database, and make sure the RPC's work, at least.\\
-
-\subsection{Realistic Workload}
-
-
-\subsubsection{TPC-C}
-\label{sec:tpcc}
-
-\textbf{Question addressed}: How does \name{}'s throughput compare to \dsdb{}'s on TPC-C benchmark?\\
-\textbf{Desired graph}: Throughput vs. warehouses, following CRDB's eval.\\
-
-* \dsdb{} runs with 1k, 10k, 50k, and 100k warehouses on 81 nodes, but in Calvin and Chiller's evals, I see way fewer warehouses. \jenndebug{I initially wanted to match CRDB's configurations, but I worry that our hardware is not as powerful, and would CloudLab truly let me reserve 81 machines?}\\
-* Use star network topology, copying CRDB's recommendations.\\
-\textit{** Check with Chris and Theano about how to configure a star topology in CloudLab that accepts more than 40 machines.}\\
-* If we were fixing a number of machines, I'd choose 81 to match CRDB. Since we don't have that, I'll run on as many as I manage to reserve.
-
-\begin{figure}[t]
-  \includegraphics[width=\linewidth]{fig/kodiak/tpcc_mix_10_nlog_ct_tp.pdf}
-  \placeholder{
-    x-axis: 1k, 10k, 50k, 100k warehouses\\
-    y-axis: throughput\\
-    points: each point is the maximum throughput achievable at the given number of warehouses.\\
-    lines: \name{}, \dsdb{}\\
-  }
-  \caption{Throughput of \name{} compared to \dsdb{} on TPC-C benchmark.}
-  \label{fig:tpcc_normal}
-\end{figure}
-
-\subsubsection{KV Benchmark (maybe don't call it modified YCSB, since it's been pretty modified)}
-\label{sec:kv}
-\textbf{Question addressed}: How does \name{}'s throughput compare to \dsdb{}'s under varying levels of skew?
-\textbf{Desired graph: Throughput vs. skew, for a fixed number of machines.}\\
-* We use our microbenchmark (\dsdb{}'s modified KV benchmark).\\
-* Fix a number of nodes (\jenndebug{how do we choose this?}) and run throughput vs skew trials.\\
-
-\begin{figure}[t]
-  \includegraphics[width=\linewidth]{fig/kodiak/tpcc_mix_10_nlog_ct_tp.pdf}
-  \placeholder{
-    x-axis: zipf constant from s=[0.5, 1.5]\\
-    y-axis: throughput\\
-    points: each point is the maximum throughput achievable at the given skew.\\
-    lines: \name{}, \dsdb{}\\
-  }
-  \caption{Throughput of \name{} compared to \dsdb{} under varying levels of skew.}
-  \label{fig:kv_normal}
-\end{figure}
-
-\subsection{Scalability}
-\label{sec:scale}
-
-\textbf{Question addressed}: at what threshold does Thermopylae's throughput stop scaling, and its throughput plateaus?\\
-\textbf{Graph desired:} Throughput vs. number of machines.\\
-* Fix a skew (\jenndebug{how do we choose this? Probably s=1.2?}), and run KV benchmark for an increasing number of machines until throughput plateaus.\\
-\\
-\textbf{Question addressed}: how does skew affect Thermopylae's threshold?\\
-\textbf{Graph desired}: throughput vs. number of machines\\
-* KV benchmark.\\
-* For three separate skews representing low, medium, high skews (s=0.5, 0.99, 1.5?), graph Thermopylae's throughput varying the number of machines until throughput plateaus.\\
-\\
-\textbf{Question addressed}: how does \dsdb{}'s threshold vary with skew?\\
-\textbf{Graph desired}: throughput vs. number of machines\\
-* For low, medium, high skews, graph \dsdb{}'s throughput varying number of machines until throughput plateaus.\\
-\\
-\textbf{Question addressed}: how does \name{}'s thresholds compare to \dsdb{}'s thresholds?\\
-\textbf{Graph desired}: throughput vs. number of machines\\
-* Graph the above three in the same graph to showcase their relationships. Shows how \name{}'s throughput and breakpoints vary in contrast to \dsdb{}'s.
-
-\begin{figure*}[t]
-  \centerline {
-    \begin{subfigure}{\textwidth}
-      \includegraphics[width=\linewidth]{fig/kodiak/tpcc_mix_10_nlog_ct_tp.pdf}
-      \placeholder{
-        x-axis: number of machines\\
-        y-axis: cluster throughput\\
-        lines: \name{}\\
-        }
-      \caption{\name{}'s throughput with varying cluster size at fixed skew.}
-      \label{fig:tmpl_one}
-    \end{subfigure}
-    \begin{subfigure}{\textwidth}
-      \includegraphics[width=\linewidth]{fig/kodiak/tpcc_mix_10_nlog_ct_lt_eb.pdf}
-      \placeholder{
-        x-axis: number of machines\\
-        y-axis: cluster throughput\\
-        lines: \name{} at low, medium, high skews\\
-      }
-      \caption{\name{}'s throughput vs capacity at varying skews}
-      \label{fig:tmpl_three}
-    \end{subfigure}
-    \begin{subfigure}{\textwidth}
-      \placeholder{
-        x-axis: number of machines\\
-        y-axis: throughput\\
-        lines: \dsdb{} at low, medium, high skews\\
-      }
-      \includegraphics[width=\linewidth]{fig/kodiak/tpcc_mix_10_nlog_ct_cr.pdf}
-      \caption{\dsdb{}'s throughput vs capacity at varying skews}
-      \label{fig:crdb_three}
-    \end{subfigure}
-    \begin{subfigure}{\textwidth}
-      \placeholder{
-        x-axis: number of machines\\
-        y-axis: throughput\\
-        lines: \name{}, \dsdb{} at low, medium, high skews\\
-      }
-      \includegraphics[width=\linewidth]{fig/kodiak/tpcc_mix_10_nlog_ct_cr.pdf}
-      \caption{\name and \dsdb{}'s throughput vs capacity at varying skews}
-      \label{fig:tmpl_crdb_three}
-    \end{subfigure}
-  }
-  \caption{Throughput of \name{} varied with number of machines and skew, as compared to CRDB.}
-  \label{fig:tmpl_crdb_all}
-\end{figure*}
-
-\subsubsection{Scalability break point}
-\label{sec:break}
-\textbf{Question addressed}: what is the relationship between \name{}'s break point and skew? How does that compare to \dsdb{}'s?\\
-\textbf{Desired graph}: Number of machines vs. skew\\
-* Taking data from the previous experiment, graph each database's "breakpoint" or the number of machines at which they stop seeing throughput increases vs. the skew that the breakpoint belongs to.\\
-
-\begin{figure}[t]
-  \includegraphics[width=\linewidth]{fig/kodiak/tpcc_mix_10_nlog_ct_tp.pdf}
-  \placeholder{
-    x-axis: zipf constant from s=[0.5, 1.5]\\
-    y-axis: number of machines\\
-    points: each point is the number of machines that the DB stops seeing throughput increases\\
-    lines: \name{}, \dsdb{}\\
-  }
-  \caption{\name{}'s throughput compared with \dsdb{}'s under varying levels of skew.}
-  \label{fig:breakpoint}
-\end{figure}
